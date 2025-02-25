@@ -5,6 +5,7 @@ import json
 import re
 import pyperclip
 from typing import List, Dict, Optional
+import os
 
 class ClaudeChatbot:
     def __init__(self):
@@ -30,6 +31,33 @@ class ClaudeChatbot:
             st.session_state.api_key = ''
         if 'parameters' not in st.session_state:
             st.session_state.parameters = self.default_params.copy()
+        if 'is_loading' not in st.session_state:
+            st.session_state.is_loading = False
+
+    def setup_custom_theme(self):
+        """Create a custom theme configuration file"""
+        config_dir = ".streamlit"
+        config_file = os.path.join(config_dir, "config.toml")
+        
+        # Create directory if it doesn't exist
+        if not os.path.exists(config_dir):
+            os.makedirs(config_dir)
+        
+        # Define the IT-themed color scheme
+        theme_config = """
+[theme]
+primaryColor = "#007acc"  # Azure blue, common in IT/tech interfaces
+backgroundColor = "#1e1e1e"  # Dark background common in code editors
+secondaryBackgroundColor = "#2d2d2d"  # Slightly lighter than background
+textColor = "#e0e0e0"  # Light grey for good contrast on dark background
+font = "sans serif"
+        """
+        
+        # Write the configuration if it doesn't exist
+        if not os.path.exists(config_file):
+            with open(config_file, 'w') as f:
+                f.write(theme_config)
+            st.info("Custom theme applied. You may need to refresh the page to see changes.")
 
     def extract_code_blocks(self, text: str) -> List[Dict[str, str]]:
         """Extract code blocks from markdown text"""
@@ -65,6 +93,9 @@ class ClaudeChatbot:
 
     def create_chat_interface(self):
         """Create the main chat interface"""
+        # Apply the custom theme
+        self.setup_custom_theme()
+        
         st.title("Claude IT Administration Assistant")
         
         # Sidebar for configuration
@@ -130,9 +161,15 @@ class ClaudeChatbot:
                 for idx, block in enumerate(code_blocks):
                     with st.expander(f"Code Artifact {idx + 1}"):
                         st.code(block['code'], language=block['language'])
-                        if st.button(f"Copy Code {idx + 1}"):
+                        if st.button(f"Copy Code {idx + 1}", key=f"copy_{message['role']}_{idx}"):
                             pyperclip.copy(block['code'])
                             st.success("Code copied to clipboard!")
+
+        # Display loading indicator for ongoing API calls
+        if st.session_state.is_loading:
+            with st.spinner("Claude is thinking... This may take a moment."):
+                st.info("Processing your request. Extended thinking mode is " + 
+                       ("enabled" if st.session_state.parameters.get("extended_thinking", False) else "disabled"))
 
         # Chat input
         if prompt := st.chat_input("Type your message here..."):
@@ -144,60 +181,65 @@ class ClaudeChatbot:
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
+            
+            # Set loading state and rerun to show loading indicator
+            st.session_state.is_loading = True
+            st.rerun()
 
-            # Get Claude's response
-            try:
-                client = anthropic.Client(api_key=st.session_state.api_key)
-                
-                # Prepare the messages list (only user and assistant messages)
-                messages = [
-                    {
-                        "role": msg["role"],
-                        "content": msg["content"]
-                    } for msg in st.session_state.messages
-                ]
+    def process_response(self):
+        """Process the response from Claude API"""
+        if not st.session_state.is_loading:
+            return
+            
+        try:
+            client = anthropic.Client(api_key=st.session_state.api_key)
+            
+            # Prepare the messages list (only user and assistant messages)
+            messages = [
+                {
+                    "role": msg["role"],
+                    "content": msg["content"]
+                } for msg in st.session_state.messages
+            ]
 
-                # Get response from Claude with system prompt as separate parameter
-                # Include extended thinking parameter if enabled
-                message_params = {
-                    "model": st.session_state.parameters["model"],
-                    "temperature": st.session_state.parameters["temperature"],
-                    "max_tokens": st.session_state.parameters["max_tokens"],
-                    "system": self.system_prompt,
-                    "messages": messages
-                }
-                
-                # Add extended thinking parameter if enabled
-                if st.session_state.parameters.get("extended_thinking", False):
-                    message_params["extended_thinking"] = True
-                
-                response = client.messages.create(**message_params)
+            # Get response from Claude with system prompt as separate parameter
+            # Include extended thinking parameter if enabled
+            message_params = {
+                "model": st.session_state.parameters["model"],
+                "temperature": st.session_state.parameters["temperature"],
+                "max_tokens": st.session_state.parameters["max_tokens"],
+                "system": self.system_prompt,
+                "messages": messages
+            }
+            
+            # Add extended thinking parameter if enabled
+            if st.session_state.parameters.get("extended_thinking", False):
+                message_params["extended_thinking"] = True
+            
+            response = client.messages.create(**message_params)
 
-                # Add Claude's response to chat
-                assistant_message = response.content[0].text
-                st.session_state.messages.append(
-                    {"role": "assistant", "content": assistant_message}
-                )
-                
-                with st.chat_message("assistant"):
-                    st.markdown(assistant_message)
-                    
-                    # Extract and display code blocks
-                    code_blocks = self.extract_code_blocks(assistant_message)
-                    for idx, block in enumerate(code_blocks):
-                        with st.expander(f"Code Artifact {idx + 1}"):
-                            st.code(block['code'], language=block['language'])
-                            if st.button(f"Copy Code {idx + 1}"):
-                                pyperclip.copy(block['code'])
-                                st.success("Code copied to clipboard!")
-
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
+            # Add Claude's response to chat
+            assistant_message = response.content[0].text
+            st.session_state.messages.append(
+                {"role": "assistant", "content": assistant_message}
+            )
+            
+            # Reset loading state
+            st.session_state.is_loading = False
+            
+        except Exception as e:
+            st.error(f"Error: {str(e)}")
+            # Reset loading state
+            st.session_state.is_loading = False
 
 def main():
     chatbot = ClaudeChatbot()
     chatbot.initialize_session_state()
     chatbot.create_chat_interface()
+    
+    # Process pending responses if loading
+    if st.session_state.is_loading:
+        chatbot.process_response()
 
 if __name__ == "__main__":
     main()
