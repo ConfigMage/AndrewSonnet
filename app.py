@@ -203,7 +203,6 @@ font = "sans serif"
             ]
 
             # Get response from Claude with system prompt as separate parameter
-            # Include extended thinking parameter if enabled
             message_params = {
                 "model": st.session_state.parameters["model"],
                 "temperature": st.session_state.parameters["temperature"],
@@ -212,14 +211,24 @@ font = "sans serif"
                 "messages": messages
             }
             
-            # Add extended thinking parameter if enabled
+            # Create a separate parameter for extended thinking if enabled
+            extended_thinking_value = None
             if st.session_state.parameters.get("extended_thinking", False):
-                message_params["extended_thinking"] = True
+                extended_thinking_value = {"max_thinking_length": 16000, "thinking_visible": True}
+
+            # Add extended_thinking parameter with correct structure
+            if extended_thinking_value:
+                message_params["extended_thinking"] = extended_thinking_value
             
             response = client.messages.create(**message_params)
 
             # Add Claude's response to chat
             assistant_message = response.content[0].text
+            
+            # If thinking is available and visible, prepend it to the message
+            if st.session_state.parameters.get("extended_thinking", False) and hasattr(response, 'thinking'):
+                assistant_message = f"**Extended Thinking:**\n\n```\n{response.thinking}\n```\n\n**Response:**\n\n{assistant_message}"
+            
             st.session_state.messages.append(
                 {"role": "assistant", "content": assistant_message}
             )
