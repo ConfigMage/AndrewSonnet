@@ -33,6 +33,8 @@ class ClaudeChatbot:
             st.session_state.parameters = self.default_params.copy()
         if 'is_loading' not in st.session_state:
             st.session_state.is_loading = False
+        if 'should_process_response' not in st.session_state:
+            st.session_state.should_process_response = False
 
     def setup_custom_theme(self):
         """Create a custom theme configuration file"""
@@ -171,6 +173,12 @@ font = "sans serif"
                 st.info("Processing your request. Extended thinking mode is " + 
                        ("enabled" if st.session_state.parameters.get("extended_thinking", False) else "disabled"))
 
+        # Process the API response if needed
+        if st.session_state.should_process_response:
+            self.process_response()
+            st.session_state.should_process_response = False
+            st.rerun()  # This is critical - rerun to show the new message
+
         # Chat input
         if prompt := st.chat_input("Type your message here..."):
             if not st.session_state.api_key:
@@ -182,8 +190,9 @@ font = "sans serif"
             with st.chat_message("user"):
                 st.markdown(prompt)
             
-            # Set loading state and rerun to show loading indicator
+            # Set loading state and flag to process response
             st.session_state.is_loading = True
+            st.session_state.should_process_response = True
             st.rerun()
 
     def process_response(self):
@@ -208,7 +217,8 @@ font = "sans serif"
                 "temperature": st.session_state.parameters["temperature"],
                 "max_tokens": st.session_state.parameters["max_tokens"],
                 "system": self.system_prompt,
-                "messages": messages
+                "messages": messages,
+                "top_p": st.session_state.parameters["top_p"]
             }
             
             # Create a separate parameter for extended thinking if enabled
@@ -245,10 +255,6 @@ def main():
     chatbot = ClaudeChatbot()
     chatbot.initialize_session_state()
     chatbot.create_chat_interface()
-    
-    # Process pending responses if loading
-    if st.session_state.is_loading:
-        chatbot.process_response()
 
 if __name__ == "__main__":
     main()
