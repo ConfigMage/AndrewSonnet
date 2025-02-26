@@ -221,14 +221,12 @@ font = "sans serif"
                 "top_p": st.session_state.parameters["top_p"]
             }
             
-            # Create a separate parameter for extended thinking if enabled
-            extended_thinking_value = None
+            # Add extended_thinking parameter if enabled
             if st.session_state.parameters.get("extended_thinking", False):
-                extended_thinking_value = {"max_thinking_length": 16000, "thinking_visible": True}
-
-            # Add extended_thinking parameter with correct structure
-            if extended_thinking_value:
-                message_params["extended_thinking"] = extended_thinking_value
+                message_params["extended_thinking"] = {
+                    "max_thinking_length": 16000,
+                    "thinking_visible": True
+                }
             
             response = client.messages.create(**message_params)
 
@@ -236,7 +234,7 @@ font = "sans serif"
             assistant_message = response.content[0].text
             
             # If thinking is available and visible, prepend it to the message
-            if st.session_state.parameters.get("extended_thinking", False) and hasattr(response, 'thinking'):
+            if st.session_state.parameters.get("extended_thinking", False) and response.thinking:
                 assistant_message = f"**Extended Thinking:**\n\n```\n{response.thinking}\n```\n\n**Response:**\n\n{assistant_message}"
             
             st.session_state.messages.append(
